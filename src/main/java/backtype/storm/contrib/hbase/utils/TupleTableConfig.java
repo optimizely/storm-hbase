@@ -26,6 +26,7 @@ public class TupleTableConfig implements Serializable {
     protected String tupleRowKeyField;
     protected String tupleTimestampField;
     protected Map<String, Set<String>> columnFamilies;
+    protected String hbaseZookeeperQuorum;
     private boolean batch = true;
     protected boolean writeToWAL = true;
     private long writeBufferSize = 0L;
@@ -187,6 +188,21 @@ public class TupleTableConfig implements Serializable {
      */
     public String getTableName() {
         return tableName;
+    }
+
+    /**
+     * @return hbase's zookeeper quorum
+     */
+    public String getHBaseZookeeperQuorum() {
+        return hbaseZookeeperQuorum;
+    }
+
+    /**
+     * set hbase zookeeper quorum. defaults to the value found in
+     * the hbase-site.xml (if found)
+     */
+    public void setHbaseZookeeperQuorum(String hbaseZookeeperQuorum) {
+        this.hbaseZookeeperQuorum = hbaseZookeeperQuorum;
     }
 
     /**

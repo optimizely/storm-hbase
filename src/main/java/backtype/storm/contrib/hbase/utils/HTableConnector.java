@@ -5,6 +5,7 @@ import java.io.Serializable;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.log4j.Logger;
@@ -33,6 +34,11 @@ public class HTableConnector implements Serializable {
   public HTableConnector(final TupleTableConfig conf) throws IOException {
     this.tableName = conf.getTableName();
     this.conf = HBaseConfiguration.create();
+
+    String hBaseZookeeperQuorum = conf.getHBaseZookeeperQuorum();
+    if (hBaseZookeeperQuorum != null) {
+        this.conf.set(HConstants.ZOOKEEPER_QUORUM, hBaseZookeeperQuorum);
+    }
 
     LOG.info(String.format("Initializing connection to HBase table %s at %s", tableName,
       this.conf.get("hbase.rootdir")));

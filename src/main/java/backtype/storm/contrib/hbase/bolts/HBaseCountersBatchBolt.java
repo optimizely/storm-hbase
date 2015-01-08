@@ -2,11 +2,13 @@ package backtype.storm.contrib.hbase.bolts;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.client.Put;
@@ -53,175 +55,174 @@ import backtype.storm.tuple.Values;
 @SuppressWarnings("serial")
 public class HBaseCountersBatchBolt extends BaseTransactionalBolt implements ICommitter {
 
-  private static final Logger LOG = Logger.getLogger(HBaseCountersBatchBolt.class);
+    private static final Logger LOG = Logger.getLogger(HBaseCountersBatchBolt.class);
 
-  private static final byte[] TXID = "_txid".getBytes();
+    private static final byte[] TXID = "_txid".getBytes();
 
-  private HTableConnector connector;
-  private TupleTableConfig conf;
+    private HTableConnector connector;
+    private TupleTableConfig conf;
 
-  private TransactionAttempt attempt;
-  private BatchOutputCollector collector;
+    private TransactionAttempt attempt;
+    private BatchOutputCollector collector;
 
-  // Map of row keys to increments for this batch
-  Map<byte[], Increment> counters;
+    // Map of row keys to increments for this batch
+    Map<byte[], Increment> counters;
 
-  public HBaseCountersBatchBolt(final TupleTableConfig conf) {
-    this.conf = conf;
-  }
-
-  /** {@inheritDoc} */
-  @SuppressWarnings("rawtypes")
-  @Override
-  public void prepare(Map conf, TopologyContext context, BatchOutputCollector collector,
-      TransactionAttempt id) {
-    this.collector = collector;
-    this.attempt = id;
-    this.counters = new TreeMap<byte[], Increment>(Bytes.BYTES_COMPARATOR);
-
-    if (LOG.isDebugEnabled()) {
-      LOG.debug(String.format("Preparing for tx %d (attempt %d)", id.getTransactionId(),
-        id.getAttemptId()));
+    public HBaseCountersBatchBolt(final TupleTableConfig conf) {
+        this.conf = conf;
     }
-  }
 
-  /** {@inheritDoc} */
-  @Override
-  public void execute(Tuple tuple) {
-    Increment newInc = conf.getIncrementFromTuple(tuple, TupleTableConfig.DEFAULT_INCREMENT);
-    Increment extInc = counters.get(newInc.getRow());
+    /** {@inheritDoc} */
+    @SuppressWarnings("rawtypes")
+    @Override
+    public void prepare(Map conf, TopologyContext context, BatchOutputCollector collector,
+                        TransactionAttempt id) {
+        this.collector = collector;
+        this.attempt = id;
+        this.counters = new TreeMap<byte[], Increment>(Bytes.BYTES_COMPARATOR);
 
-    if (extInc != null) {
-      // Increment already exists for row, add newInc to extInc
-      for (Entry<byte[], NavigableMap<byte[], Long>> families : newInc.getFamilyMap().entrySet()) {
-
-        for (Entry<byte[], Long> columns : families.getValue().entrySet()) {
-          TupleTableConfig.addIncrement(extInc, families.getKey(), columns.getKey(),
-            columns.getValue());
+        if (LOG.isDebugEnabled()) {
+            LOG.debug(String.format("Preparing for tx %d (attempt %d)", id.getTransactionId(),
+                    id.getAttemptId()));
         }
-      }
-      counters.put(newInc.getRow(), extInc);
-    } else {
-      counters.put(newInc.getRow(), newInc);
-    }
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  public void finishBatch() {
-    try {
-      connector = new HTableConnector(conf);
-    } catch (IOException ex) {
-      throw new RuntimeException(ex);
     }
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Finishing tx: " + attempt.getTransactionId());
-      LOG.debug(String.format("Updating idempotent counters for %d rows in table '%s'",
-        counters.size(), conf.getTableName()));
-    }
+    /** {@inheritDoc} */
+    @Override
+    public void execute(Tuple tuple) {
+        Increment newInc = conf.getIncrementFromTuple(tuple, TupleTableConfig.DEFAULT_INCREMENT);
+        Increment extInc = counters.get(newInc.getRow());
 
-    for (Increment inc : counters.values()) {
-      for (Entry<byte[], NavigableMap<byte[], Long>> e : inc.getFamilyMap().entrySet()) {
-
-        for (Entry<byte[], Long> c : e.getValue().entrySet()) {
-          // Get counters latest txid from table
-          byte[] txidCQ = txidQualifier(c.getKey());
-          BigInteger latestTxid = getLatestTxid(inc.getRow(), e.getKey(), txidCQ);
-          long counter = c.getValue();
-
-          if (latestTxid == null || !latestTxid.equals(attempt.getTransactionId())) {
-            // txids are different so safe to increment counter
-            try {
-              counter =
-                  connector.getTable().incrementColumnValue(inc.getRow(), e.getKey(), c.getKey(),
-                    c.getValue(), conf.isWriteToWAL());
-            } catch (IOException ex) {
-              throw new RuntimeException(String.format("Unable to increment counter: %s, %s, %s",
-                Bytes.toString(inc.getRow()), Bytes.toString(e.getKey()),
-                Bytes.toString(c.getKey())), ex);
+        if (extInc != null) {
+            for (Entry<byte[], List<Cell>> families : newInc.getFamilyCellMap().entrySet()) {
+                for (Cell cell : families.getValue()) {
+                    long amount = Bytes.toLong(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength());
+                    TupleTableConfig.addIncrement(extInc, families.getKey(), cell.getQualifierArray(),
+                            amount);
+                }
             }
-
-            putLatestTxid(inc.getRow(), e.getKey(), txidCQ);
-
-            collector.emit(new Values(inc.getRow(), e.getKey(), c.getKey(), counter));
-
-            if (LOG.isDebugEnabled()) {
-              LOG.debug(String.format(
-                "txids for counter %s, %s, %s are different [%d, %d], incrementing",
-                Bytes.toString(inc.getRow()), Bytes.toString(e.getKey()),
-                Bytes.toString(c.getKey()), latestTxid, attempt.getTransactionId()));
-            }
-
-          } else {
-            if (LOG.isDebugEnabled()) {
-              LOG.debug(String.format("txids for counter %s, %s, %s are the same [%d], skipping",
-                Bytes.toString(inc.getRow()), Bytes.toString(e.getKey()),
-                Bytes.toString(c.getKey()), latestTxid));
-            }
-          }
+            counters.put(newInc.getRow(), extInc);
+        } else {
+            counters.put(newInc.getRow(), newInc);
         }
-      }
     }
 
-  }
+    /** {@inheritDoc} */
+    @Override
+    public void finishBatch() {
+        try {
+            connector = new HTableConnector(conf);
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
 
-  /**
-   * Updates the latest txid for the counter
-   * @param row The row key
-   * @param fam The column family
-   * @param qual The column qualifier of the txid (e.g. the counters qualifier + "_txid")
-   */
-  private void putLatestTxid(byte[] row, byte[] fam, byte[] qual) {
-    Put txidPut = new Put(row);
-    txidPut.add(fam, qual, attempt.getTransactionId().toByteArray());
-    try {
-      connector.getTable().put(txidPut);
-    } catch (IOException e) {
-      throw new RuntimeException("Unable to update txid for " + txidPut.toString(), e);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Finishing tx: " + attempt.getTransactionId());
+            LOG.debug(String.format("Updating idempotent counters for %d rows in table '%s'",
+                    counters.size(), conf.getTableName()));
+        }
+
+        for (Increment inc : counters.values()) {
+            for (Entry<byte[], NavigableMap<byte[], Long>> e : inc.getFamilyMapOfLongs().entrySet()) {
+
+                for (Entry<byte[], Long> c : e.getValue().entrySet()) {
+                    // Get counters latest txid from table
+                    byte[] txidCQ = txidQualifier(c.getKey());
+                    BigInteger latestTxid = getLatestTxid(inc.getRow(), e.getKey(), txidCQ);
+                    long counter = c.getValue();
+
+                    if (latestTxid == null || !latestTxid.equals(attempt.getTransactionId())) {
+                        // txids are different so safe to increment counter
+                        try {
+                            counter =
+                                    connector.getTable().incrementColumnValue(inc.getRow(), e.getKey(), c.getKey(),
+                                            c.getValue(), conf.isWriteToWAL());
+                        } catch (IOException ex) {
+                            throw new RuntimeException(String.format("Unable to increment counter: %s, %s, %s",
+                                    Bytes.toString(inc.getRow()), Bytes.toString(e.getKey()),
+                                    Bytes.toString(c.getKey())), ex);
+                        }
+
+                        putLatestTxid(inc.getRow(), e.getKey(), txidCQ);
+
+                        collector.emit(new Values(inc.getRow(), e.getKey(), c.getKey(), counter));
+
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug(String.format(
+                                    "txids for counter %s, %s, %s are different [%d, %d], incrementing",
+                                    Bytes.toString(inc.getRow()), Bytes.toString(e.getKey()),
+                                    Bytes.toString(c.getKey()), latestTxid, attempt.getTransactionId()));
+                        }
+
+                    } else {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug(String.format("txids for counter %s, %s, %s are the same [%d], skipping",
+                                    Bytes.toString(inc.getRow()), Bytes.toString(e.getKey()),
+                                    Bytes.toString(c.getKey()), latestTxid));
+                        }
+                    }
+                }
+            }
+        }
+
     }
-  }
 
-  /**
-   * Get the latest txid to successfully update the given counter
-   * @param row The row key
-   * @param fam The column family
-   * @param qual The column qualifier of the txid (e.g. the counters qualifier + "_txid")
-   * @return The latest txid
-   */
-  private BigInteger getLatestTxid(byte[] row, byte[] fam, byte[] qual) {
-    Get getTxid = new Get(row);
-    getTxid.addColumn(fam, qual);
-    BigInteger latestTxid = null;
-
-    try {
-      Result res = connector.getTable().get(getTxid);
-      if (!res.isEmpty()) {
-        latestTxid = new BigInteger(res.getValue(fam, qual));
-      }
-    } catch (IOException e) {
-      throw new RuntimeException("Unable to get txid for " + getTxid.toString(), e);
+    /**
+     * Updates the latest txid for the counter
+     * @param row The row key
+     * @param fam The column family
+     * @param qual The column qualifier of the txid (e.g. the counters qualifier + "_txid")
+     */
+    private void putLatestTxid(byte[] row, byte[] fam, byte[] qual) {
+        Put txidPut = new Put(row);
+        txidPut.add(fam, qual, attempt.getTransactionId().toByteArray());
+        try {
+            connector.getTable().put(txidPut);
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to update txid for " + txidPut.toString(), e);
+        }
     }
 
-    return latestTxid;
-  }
+    /**
+     * Get the latest txid to successfully update the given counter
+     * @param row The row key
+     * @param fam The column family
+     * @param qual The column qualifier of the txid (e.g. the counters qualifier + "_txid")
+     * @return The latest txid
+     */
+    private BigInteger getLatestTxid(byte[] row, byte[] fam, byte[] qual) {
+        Get getTxid = new Get(row);
+        getTxid.addColumn(fam, qual);
+        BigInteger latestTxid = null;
 
-  /**
-   * Appends "_txid" to the end of the counters column qualifier. Used as an atomic qualifier for
-   * getting / setting the latest transaction ID against the counter in HBase
-   * @param cq The counters column qualifier
-   * @return The transaction IDs column qualifier
-   */
-  private static byte[] txidQualifier(final byte[] cq) {
-    byte[] txid = new byte[cq.length + TXID.length];
-    System.arraycopy(cq, 0, txid, 0, cq.length);
-    System.arraycopy(TXID, 0, txid, cq.length, TXID.length);
-    return txid;
-  }
+        try {
+            Result res = connector.getTable().get(getTxid);
+            if (!res.isEmpty()) {
+                latestTxid = new BigInteger(res.getValue(fam, qual));
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to get txid for " + getTxid.toString(), e);
+        }
 
-  /** {@inheritDoc} */
-  @Override
-  public void declareOutputFields(OutputFieldsDeclarer declarer) {
-    declarer.declare(new Fields("id", "row", "family", "qualifier", "counter"));
-  }
+        return latestTxid;
+    }
+
+    /**
+     * Appends "_txid" to the end of the counters column qualifier. Used as an atomic qualifier for
+     * getting / setting the latest transaction ID against the counter in HBase
+     * @param cq The counters column qualifier
+     * @return The transaction IDs column qualifier
+     */
+    private static byte[] txidQualifier(final byte[] cq) {
+        byte[] txid = new byte[cq.length + TXID.length];
+        System.arraycopy(cq, 0, txid, 0, cq.length);
+        System.arraycopy(TXID, 0, txid, cq.length, TXID.length);
+        return txid;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void declareOutputFields(OutputFieldsDeclarer declarer) {
+        declarer.declare(new Fields("id", "row", "family", "qualifier", "counter"));
+    }
 }

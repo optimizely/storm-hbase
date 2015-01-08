@@ -1,21 +1,21 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>storm.contrib</groupId>
+	<groupId>com.optimizely</groupId>
 	<artifactId>storm-hbase</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 
 	<scm>
-		<connection>https://github.com/jrkinley/storm-hbase.git</connection>
-		<developerConnection>https://github.com/jrkinley/storm-hbase.git</developerConnection>
-		<url>https://github.com/jrkinley/storm-hbase.git</url>
+		<connection>https://github.com/optimizely/storm-hbase.git</connection>
+		<developerConnection>https://github.com/optimizeyl/storm-hbase.git</developerConnection>
+		<url>https://github.com/optimizeyl/storm-hbase.git</url>
 	</scm>
 
 	<developers>
 		<developer>
-			<id>jrkinley</id>
-			<name>James Kinley</name>
-			<email>jamesrobertkinley@gmail.com</email>
+			<id>optimizely</id>
+			<name>Neil Fulwiler</name>
+			<email>backend@optimizely.com</email>
 		</developer>
 	</developers>
 
@@ -37,25 +37,25 @@
 	</repositories>
 
 	<properties>
-		<storm.version>0.8.2</storm.version>
-		<hbase.version>0.94.2-cdh4.2.1</hbase.version>
-		<hadoop.version>2.0.0-cdh4.2.1</hadoop.version>
+		<storm.version>0.9.2-incubating</storm.version>
+		<hbase.version>0.98.1-cdh5.1.0</hbase.version>
+		<hadoop.version>2.3.0-cdh5.1.0</hadoop.version>
 	</properties>
 
 	<dependencies>
 		<dependency>
-			<groupId>storm</groupId>
-			<artifactId>storm</artifactId>
+			<groupId>org.apache.storm</groupId>
+			<artifactId>storm-core</artifactId>
 			<version>${storm.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.hbase</groupId>
-			<artifactId>hbase</artifactId>
+			<artifactId>hbase-client</artifactId>
 			<version>${hbase.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.hadoop</groupId>
-			<artifactId>hadoop-common</artifactId>
+			<artifactId>hadoop-client</artifactId>
 			<version>${hadoop.version}</version>
 		</dependency>
 		<dependency>

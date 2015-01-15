@@ -33,6 +33,13 @@ public class HBaseValueState implements State {
     if (LOG.isDebugEnabled()) {
       LOG.debug("Beginning commit for tx " + txid);
     }
+    ensureHTableConnector();
+  }
+
+  private void ensureHTableConnector() {
+    if (_connector != null) {
+      return;
+    }
     try {
       _connector = new HTableConnector(_conf);
     } catch (IOException e) {
@@ -46,7 +53,11 @@ public class HBaseValueState implements State {
     if (LOG.isDebugEnabled()) {
       LOG.debug("Commit tx " + txid);
     }
-    _connector.close();
+    try {
+      _connector.getTable().flushCommits();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 
   /**

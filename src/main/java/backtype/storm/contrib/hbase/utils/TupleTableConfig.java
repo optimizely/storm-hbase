@@ -8,6 +8,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellUtil;
+import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -117,7 +118,7 @@ public class TupleTableConfig implements Serializable {
         byte[] rowKey = Bytes.toBytes(tuple.getStringByField(tupleRowKeyField));
 
         Increment inc = new Increment(rowKey);
-        inc.setWriteToWAL(writeToWAL);
+        inc.setDurability(writeToWAL ? Durability.USE_DEFAULT : Durability.SKIP_WAL);
 
         if (columnFamilies.size() > 0) {
             for (String cf : columnFamilies.keySet()) {

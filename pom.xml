@@ -7,8 +7,8 @@
 
 	<scm>
 		<connection>https://github.com/optimizely/storm-hbase.git</connection>
-		<developerConnection>https://github.com/optimizeyl/storm-hbase.git</developerConnection>
-		<url>https://github.com/optimizeyl/storm-hbase.git</url>
+		<developerConnection>https://github.com/optimizely/storm-hbase.git</developerConnection>
+		<url>https://github.com/optimizely/storm-hbase.git</url>
 	</scm>
 
 	<developers>

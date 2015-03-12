@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.optimizely</groupId>
 	<artifactId>storm-hbase</artifactId>
-	<version>0.0.2-SNAPSHOT</version>
+	<version>0.0.3-SNAPSHOT</version>
 
 	<scm>
 		<connection>https://github.com/optimizely/storm-hbase.git</connection>
@@ -95,20 +95,41 @@
 				</configuration>
 			</plugin>
 		</plugins>
+    <extensions>
+      <extension>
+        <groupId>org.springframework.build</groupId>
+        <artifactId>aws-maven</artifactId>
+        <version>5.0.0.RELEASE</version>
+      </extension>
+    </extensions>
 	</build>
 
-	<dependencyManagement>
-		<dependencies>
-			<dependency>
-				<groupId>org.slf4j</groupId>
-				<artifactId>slf4j-api</artifactId>
-				<version>1.6.3</version>
-			</dependency>
-			<dependency>
-				<groupId>org.apache.zookeeper</groupId>
-				<artifactId>zookeeper</artifactId>
-				<version>3.3.3</version>
-			</dependency>
-		</dependencies>
-	</dependencyManagement>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>1.6.3</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.zookeeper</groupId>
+        <artifactId>zookeeper</artifactId>
+        <version>3.3.3</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <distributionManagement>
+    <repository>
+      <name>S3 Release Repository</name>
+      <id>maven-s3-release-repo</id>
+      <url>s3://optimizely-maven-repo</url>
+    </repository>
+    <snapshotRepository>
+      <name>S3 Snapshot Repository</name>
+      <id>maven-s3-snapshot-repo</id>
+      <url>s3://optimizely-maven-repo</url>
+    </snapshotRepository>
+  </distributionManagement>
+
 </project>
